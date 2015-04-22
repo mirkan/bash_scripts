@@ -1,0 +1,11 @@
+#! /bin/bash          
+
+while IFS=: read user pass uid gid full home shell          
+do          
+echo -e "$full:           
+ Pseudo: $user           
+ UID:\t $uid        
+ GID:\t $gid          
+ Home:\t $home          
+ Shell:\t $shell\n"          
+done < /etc/passwd

@@ -1,0 +1,10 @@
+#!/bin/bash
+FORMAT=$( date +%d%H%M%S ).png
+#FORMAT='%Y%m%d-%k%M%S_$wx$h.png'
+
+if [ "$1" == "select" ]; then
+	#scrot -s $FORMAT -e 'mv $f ~/.screenshots/'
+	import ~/.screenshots/SELECT_$FORMAT
+else
+	scrot FULL_$FORMAT -e 'mv $f ~/.screenshots/'
+fi

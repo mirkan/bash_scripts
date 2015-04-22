@@ -1,0 +1,367 @@
+#! /bin/bash 
+### BackupToUSB ###
+# 2015-01-15
+# Author: Robin Björnsvik
+# ---
+# Script creates a udev rule for a specific USB-device and runs a backup script in the background.
+
+# 1. USB-selection screen (dialog)
+# 2. Prompt for path(s) to backed up. Input is appended to a file.
+# 3. Copy and textfile script to a permanent location on the system.
+# 4. Add device to a udev rule. Script will be executed upon insertion of the device along with 
+# an argument containing the serial number. This is necessary in case more then one device is to be used.
+# 5. Print summary and info before termination
+
+# The script has been configured to run i two different modes: One from the user as a setup script and 
+# second that is to be run directly from udev.
+
+# -- GLOBAL VARIABLES --
+# Location of the script and the textfile containing saved backup paths. 
+SCRIPT_DIR=/opt/backup_to_usb
+SCRIPT_FILE=case8.sh
+SCRIPT_TXTFILE=backup.txt
+# Variables for the selected USB-drive
+USB_DISK=
+USB_LABEL=
+USB_SERIAL=
+
+# Path where the USB will temporarily exist
+MOUNTPATH=
+
+# --- GET/SET FUNCTIONS ---
+# ----------------------
+# SET FUNCTIONS
+function setDisk () {
+	USB_DISK=$( getDisk ${1} )	
+}
+function setLabel () {
+	USB_LABEL=$( getLabel ${1} )	
+}
+function setSerial () {
+	USB_SERIAL=$( getSerial ${1} )	
+}
+# GET FUNCTIONS
+# Return USB-disk by scanning /dev folder for a matching USB Serial
+# $1 = Serial number
+function getDisk () {
+	local disks=$( basename -a /dev/sd?? )
+	
+	while read disk 
+	do
+		serialMatch=$(udevadm info --query=all /dev/${disk} | grep ${1} )
+		# Check if /dev/sdX is USB
+		if [ -n "${serialMatch}" ]; then	# Disk found
+		  echo ${disk}
+		  return 0		
+		else					# Keep searching
+		   continue		
+		fi
+	done <<< "${disks}"
+
+	#echo "No disk was found"
+	logger -it "No disk found"
+	return 1					# No disk attached with that serialnr
+}
+# Return USB-label belonging to disk.
+# $1 = disk (/dev/sd?)
+function getLabel () {
+	# Grep row containg disk/by-label and print result after '/' into USB_LABEL
+	local label=$(udevadm info /dev/${1} | grep ' disk/by-label' | cut -d '/' -f 3)
+	# Any whitespaces in the labelname will be removed
+	label=$( echo ${label} | tr -d ' ' )
+
+	# Check if Serial was found and return proper codes
+ 	if [ -n "${label}" ];then
+	    echo ${label}
+	    return 0
+	else
+	    #echo "Label not found"
+		 logger -it "Label not found"
+	    return 1
+	fi
+}
+# Return USB-Serial number belonging to disk.
+# $1 = disk (/dev/sd?)
+function getSerial () {
+	local serial=$(udevadm info /dev/${1} | grep -oE "ID_SERIAL_SHORT=([^\ ]+)" | cut -d '=' -f 2 )
+	# Check if Serial was found and return proper codes
+
+	if [ -n "${serial}" ]; then
+	    echo ${serial}
+	    return 0
+	else
+	    #echo "Serial not found"
+		 logger -it "Serial not found"
+	    return 1
+	fi
+}
+# Check wether disk is USB or not.
+function checkUSB () {
+	usbcheck=$(udevadm info --query=all /dev/${1} | grep USB )
+	if [ -z "${usbcheck}" ];then
+		logger -it "No USB disk"
+	   return 1		# 1 = No USB disk
+	else 		
+	   return 0		# 0 = USB disk
+	fi 			
+}
+# --- MAIN FUNCTIONS ---
+# ----------------------
+# FIND USB-STORAGE DEVICES
+# Search for connected USB storage devices with udevadm 
+function listUSB () {
+	# Find all disk partitions on the system
+	local disks=$(basename -a /dev/sd??)
+ 
+	# Query every disk partition to determine wether it's a USB or not.
+	while read disk 
+	do
+		# Check if /dev/sdX is USB
+		if checkUSB ${disk}; then
+		   local label=$( getLabel ${disk} )
+		   echo "${disk} \"${label}\""
+		else
+		   continue
+		fi
+	done <<< "${disks}"
+}
+
+# CREATE UDEV RULE
+# Create rule based on vendorID, modelID and SerialNR.
+function createUdev () {
+	# Create rule
+	local udev_dir=/etc/udev/rules.d
+	local udev_rule=10-usb_backup.rules
+        
+	setSerial ${USB_DISK} 
+	# Check if device has already been added	
+	local device_exist=$( cat ${udev_dir}/${udev_rule} | grep -o ${USB_SERIAL} )
+	if [ ! -n "${device_exist}" ]
+	then
+	  # Write/add udev line to /etc/udev.d/10-usb_back.rules
+	  echo "SUBSYSTEMS==\"usb\",ACTION==\"add\",KERNEL==\"sd?1\",ATTRS{serial}==\"${USB_SERIAL}\",RUN+=\"${SCRIPT_DIR}/${SCRIPT_FILE} ${USB_SERIAL}\"" >> ${udev_dir}/${udev_rule}
+	elif [ -n "${device_exist}" ]; then
+	  #echo "Device already added"
+		logger -it "Device already added"
+	else
+	  return 1 			# 1 = Error
+	fi
+
+	return 0	
+}
+# COPY SCRIPT
+# Copy script to a permanent location on the system, SCRIPT_DIR.
+function installScript () {
+	# Create dir if it doesn't exist
+	mkdir --parents ${SCRIPT_DIR}
+
+	# Copy script to SCRIPT_DIR
+	rsync -urltpz ${0} ${SCRIPT_DIR}/${SCRIPT_FILE}
+	[ $? -eq 0 ] && return 0 	# Successful
+	[ ! $? -eq 0 ] && return 1	# Error
+}
+# MOUNT USB-DRIVE
+# Mount the USB partition to /media/${USB_LABEL}
+function mountUSB () {
+	# Set global mountpath
+	MOUNTPATH=/media/${USB_LABEL}_TEMP
+
+	# Check wether drive is already mounted 
+	mkdir --parents ${MOUNTPATH}		 	# --parents ignores error if dir exists
+	mount /dev/${USB_DISK} ${MOUNTPATH}		
+	
+	# Return codes
+	if [ $? -eq 0 ];then				# 0 = Device mounted
+	   return 0					
+	elif [ $? -eq 32 ];then				# 32 = Device already mounted
+		logger -it "Device already mounted"
+	   return 0
+	else
+		logger -it "Mount failed"
+	   return 1					
+	fi
+
+}
+# RUN BACKUP 
+# Backup the paths listed in $SCRIPT_TXTFILE to Backup dir on USB-device
+function runBackup () {
+	local backuppath=${MOUNTPATH}/Backup
+
+	# Create Backup dir if it doesn't exist
+	mkdir --parents ${backuppath}		 	# --parents ignores error if dir exists
+
+	# Read paths from textfile and transfer with rsync
+	while read path; do	
+		rsync -rltpz ${path} ${backuppath}
+	done < ${SCRIPT_DIR}/${USB_LABEL}_${SCRIPT_TXTFILE}
+	
+	if [ $? = 0 ]; then
+	   return 0			# Success
+	else
+		logger -it "Rsync failed"
+	   return 1			# Error
+	fi
+}
+# CREATE/ADD PATHS TO FILE
+# Add paths to file for udev to read from
+# Append $1 to textfile in script directory. E.g /home/peter/pictures >> USB001_BACKUP.txt 
+function pathToFile () {
+	local pathfile=${SCRIPT_DIR}/${USB_LABEL}_${SCRIPT_TXTFILE}
+	# Create script directory if not existing
+	[ ! -e ${SCRIPT_DIR} ] && mkdir ${SCRIPT_DIR}
+
+	# Check if path has already been added and avoids duplicate entries
+	pathExists=$( cat ${pathfile} | grep -E "^${1}$" )	# Find only fully matching rows
+	if [ -z "${pathExists}" ]; then
+          echo ${1} >> ${pathfile}		# 0 = Append to file
+	else
+		logger -it "Path already exists"
+	  return 1
+	fi	
+
+	return 0
+}
+# --- DIALOG FUNCTIONS ---
+# ------------------------
+# SELECT USB-DEVICE
+# Choose device from a menu list with dialog
+function selectUSB () {
+	# Get connected USB-devices
+	while [ -z ${USB_DISK} ]; do
+		# Fetch current USB devices
+		local usblist=$(listUSB)
+		# Check if no USB-devices are connected.
+		if [ -n "${usblist}" ]
+		then
+			USB_DISK=$(dialog --title "BackupToUSB" --stdout --menu "Välj en USB-enhet:" 10 50 3 \
+			${usblist} )
+
+			[ $? -eq 1 -o $? -eq 255 ] && exit 0	# Exit on 'Cancel' or 'Esc'
+	
+		# If no devices has been found, ask user to retry
+		else
+			dialog --title "BackupToUSB" --yesno "Inga USB-enheter kunde hittas.\
+					Vill du söka igen?" 10 50 
+			if [ $? -eq 0 ]; then	# Rescan 
+			  continue
+			else
+			  exit 0		# Exit
+			fi
+		fi
+	done
+	# Set USB_LABEL before going any further 
+	setLabel ${USB_DISK}
+}
+# SELECT PATH TO BACKUP
+# Enter the full path name to be backed up. Can be file or directory
+function selectPath () {
+	local path=
+	# Run aslong as path is 'empty' 
+	while [ -z "${path}" ]; do
+	path=$(dialog --title "BackupToUSB" --stdout --inputbox "Välj en sökväg som ska backas upp:\n
+			   Ex. /Dokument/viktigfil.txt" 10 60) 
+
+	[ $? -eq 1 ] && exit 0
+	# PATH FOUND
+	if [ -e "${path}" ]; then
+	   pathToFile ${path}			# Append path to textfile
+	   # PATH ADDED 
+	   if [ $? -eq 0 ]; then		# 0 = Path added to txtfile
+	      # Add another path to be backed up?
+	      dialog --title "BackupToUSB" --yesno "Klart. Vill du lägga till en sökväg till?" 7 50
+	      if [ $? -eq 0 ]; then		# 0 = Yes, reset 'path' and loop again
+ 	         unset path
+	         continue
+	      elif [ $? -eq 1 ]; then		# 1 = No, move on.
+	         break				
+	      else				# Quit
+		 exit 0
+	      fi
+	   # PATH ALREADY ADDED
+	   elif [ $? -eq 1 ]; then		# 1 = Path exists, not added to textfile
+	      # Path exists in textfile already. Try another path?
+	      dialog --title "BackupToUSB" --yesno "Sökvägen finns redan. Vill du fortsätta ändå?" 7 50
+	      if [ $? -eq 0 ]; then		# 0 = Ok, reset 'path' and loop again
+	          break
+              elif [ $? -eq 1 ]; then
+		  unset path
+		  continue
+	      else				# Quit
+		  exit 0	
+	      fi
+	   else
+	       exit 0				# Quit 
+	 fi
+ 	# PATH NOT FOUND
+	else
+	  dialog --title "BackupToUSB" --msgbox "Sökvägen existerar inte. Försök igen." 7 50
+	  if [ $? -eq 0 ]; then 		# 0 =OK, reset 'path' and try again
+	    unset path
+	    continue
+	  else
+	    exit 0			 	# No/Esc/Cancel/Exit
+	  fi
+	fi
+	done
+
+	return 0
+}
+
+function finishScript () {
+	dialog --title "BackupToUSB" --yesno "En udev-regel har skapats så en backup kommer att\n
+			genomföras så fort USB-stickan har satts in i datorn.\n
+			Vill du köra en säkerhetskopiering nu?" 10 60
+	if [ $? -eq 0 ]; then			# Yes = Perform backup
+	  mountUSB
+	  [ $? -eq 0 ] && runBackup
+ 	else
+          exit 0	  
+	fi
+
+	if [ $? -eq 0 ]; then
+	    dialog --msgbox "Säkerhetskopiering slutförd. Tryck Ok för att avsluta." 10 60 
+	else
+	    dialog --msgbox "Det där borde inte ha hänt" 10 60		# Print error message 
+	fi
+}
+# --- RUN SCRIPT ---
+# ------------------
+# SETUP run when no arguments are passed on. 
+function setupRun () {
+	selectUSB				# Choose USB-device
+	[ $? -eq 0 ] && selectPath		# Choose Path to Backup
+	[ $? -eq 0 ] && installScript		# Copy script to permanent location
+	[ $? -eq 0 ] && createUdev		# Add the device to a udev rule
+	[ $? -eq 0 ] && finishScript		# Print summary and info to user
+}
+# UDEV run that req 2 arguments.  
+# $1 = Serial number for USB-drive in order the find which disk is the
+function udevRun () {
+	setDisk ${1}				# Pass on SerialNR and find disk to work with
+	[ $? -eq 0 ] && setLabel ${USB_DISK}	# Find and set USB label
+	[ $? -eq 0 ] && mountUSB		# Mount the USB-drive
+	[ $? -eq 0 ] && runBackup 		# Run the backup
+}
+# --- START ----
+# Make sure script is run as root
+[ ${UID} -ne 0 ] && exit 1
+
+if [ $# -eq 0 ]; then				# Check so NO arguments was passed	
+	setupRun
+elif [ $# -eq 1 ]; then				# Check so "one" argument was passed
+	udevRun ${1}
+else						# Exit if more then one argument was passed
+	echo "Too many arguments"
+	exit 0
+fi
+
+# Runs cleanup taska before the script terminates
+function onExit () {	
+	# Unmount in case drive is mounted
+	mountpoint -q ${MOUNTPATH} 
+	[ $? = 0 ] && umount ${MOUNTPATH} 
+	# Remove directory
+	rmdir ${MOUNTPATH} 
+}
+trap onExit EXIT
+exit 0

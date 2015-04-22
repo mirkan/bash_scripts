@@ -1,0 +1,34 @@
+#!/bin/bash
+# Backup script for config files in arch linux
+DROPBOX=/home/robin/Dropbox/Backups/Linux/configs
+#ETC=()
+
+# Files/Folders under /home/robin/
+home=('.vim' '.vimrc' '.bashrc' '.scripts' '.Xresources' '.todo' '.urxvt' 
+		'.ncmpcpp' '.fehbg' '.ssh' '.mplayer' '.bash_history' '.xbindkeysrc'
+)
+#Files/Folders under /home/robin/.config
+dotconfig=('compton.conf' 'dwb' 'dunst' 'i3' 'i3status' 'interrobang' 'mpd'
+				'libvirt' 'gtk-2.0' 'gtk-3.0' 'openbox' 'ranger' 'tint2'
+				'xboxdrv.conf'
+)
+
+# Add /home path before file/folder name
+i=0
+for entry in "${home[@]}"; do
+	home[i]="$HOME/$entry "
+	i=$(( i + 1 ))
+done
+
+# Add /home/robin/.config before filer/folder name
+i=0
+for entry in "${dotconfig[@]}"; do
+	dotconfig[i]="$HOME/.config/$entry "
+	i=$(( i + 1 ))
+done
+
+#rsync -aAXvu --delete ~/.config ~/.vim ~/.vimrc ~/.Xresources ~/.bashrc ~/.scripts ~/.todo ~/.urxvt ~/.ncmpcpp ~/.fehbg $DROPBOX
+
+rsync -aAXvu --delete ${home[@]} $DROPBOX
+rsync -aAXvu --delete ${dotconfig[@]} $DROPBOX/.config/
+

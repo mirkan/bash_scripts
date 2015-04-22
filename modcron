@@ -1,0 +1,84 @@
+#!/bin/bash
+# modcron.sh - Adjust crontab from the commandline
+#
+#modcron.sh -l 	# Listar crontab fast med ett radnummer först.
+#modcron.sh -a 	# Lägger till en ny rad sist i crontab.
+#              	# Raden läses in med read
+#modcron.sh -d 2 	# Tar bort en rad från crontab.
+#                	# I detta exemplet är står 2 för radnummer.
+#modcron.sh -e 2 	# Editerar endast 1 rad i crontab.
+#                	# I detta exemplet är står 2 för radnummer.
+#                	# Editering sker i med editor (ex vi eller nano).
+CRONFILE=/tmp/cronfile
+
+# LIST JOBS
+function cronList () {
+	# List entries in crontab and add row nr with 'nl'
+	crontab -l | nl
+
+	exit 0
+}
+
+# ADD JOB
+function cronAdd () {
+	read entry
+	echo "$entry" >> $CRONFILE
+
+	return 0
+}
+
+# REMOVE JOB
+# Needs rownumber as argument
+function cronRemove () {
+	row=$1
+	# Remove rownumber with sed
+	sed -i "${row}d" $CRONFILE	
+	
+	return 0
+}
+
+# EDIT JOB
+# Needs rownumber as argument
+function cronEdit () {
+	row=$1
+	# Get row with sed and put it in variable
+	oldline=$( sed -n ${row}p $CRONFILE )
+	
+	# Output line to read and allow user to edit
+	read -i "$oldline" -e newline
+
+	# Use sed to replace line:'$row' with the contents of "$newline"
+	sed -i "${row}s|.*|${newline}|" $CRONFILE 	
+
+	return 0
+}
+
+# APPLY JOB
+# Write changes to crontab
+function cronApply () {
+	# Apply new crontab and replace old crontab list
+	crontab $CRONFILE
+}
+
+# RUNTIME
+# Create temporary file containg all the entries
+crontab -l > $CRONFILE
+
+# GETOPS
+while getopts ":lar:e:" option; do
+	case $option in 
+		l) cronList ;;
+		a) cronAdd;;
+		r) cronRemove ${OPTARG};;
+		e) cronEdit ${OPTARG} ;;
+		*) echo "Invalid option"
+			exit 1;;
+	esac
+done
+
+# Apply new changes to crontab before exiting
+cronApply
+# Remove temp file
+rm $CRONFILE
+
+exit 0

@@ -1,0 +1,9 @@
+#!/usr/bin/bash
+cat <<EOF
+Usage: $0 [options]
+
+-h| --help	Usage page
+
+-1| --first	Initiate script
+-2| --second	Go for it
+EOF
