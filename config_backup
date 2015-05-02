@@ -1,6 +1,6 @@
 #!/bin/bash
 # Backup script for config files in arch linux
-DROPBOX=/home/robin/Dropbox/Backups/Linux/configs
+DROPBOX=$HOME/Dropbox/Backups/Linux/configs
 #ETC=()
 
 # Files/Folders under /home/robin/

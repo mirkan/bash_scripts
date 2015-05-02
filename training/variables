@@ -1,9 +1,0 @@
-#!/bin/bash
-
-FILES=('alfa'
-		'bravo'
-		'charlie'
-		'tango'
-		'foxtrot'
-)
-rm ${FILES[@]}
