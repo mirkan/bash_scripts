@@ -4,9 +4,9 @@ url="http://www.imdb.com/user/ur5234692/watchlist"
 tmpfile="/tmp/imdb_hdb_watchlistsync"
 
 # HDBits.org cookie data
-uid=""1105914
+uid="1105914"
 pass="2fd9ecd79d73b0265dc483b05f1639cd41c0b9df242831322e51572a2d22872b1aaa0fe4abafd1d730dcfba5b33aee16f0ea5e47358328a8c68589eb76393571"
-hash="6f3ff8e29825830372d7ed7afe4cec734b9c6a22a64f8decd111269448dcee5fc34150112f9f000d0688f1fa70a0e78d17eea0a26cd1e6a266b87fe9f480f38b"
+hash="ee5755aedb16a47e1dc78bb35c8d704b5642631131bc2e8cfa97a4cdf33c0e2e4a70c75191f0e45658b96ffee2b7a0a32f6ad2cb36230a7912f353f82cbe5c27"
 
 # Get watchlist url and filter out /<imdbID> -link
 curl -s --location $url | grep href=\"\/title | grep -v div\ class | 

@@ -1,25 +1,34 @@
-#!/bin/bash
+#!/bin/bash 
 
-function startSixaxis () {
-		  #Change original device permissions so Steam doesn't detect it
-		  chmod 600 $DEVICE 
-		  xboxdrv --evdev $DEVICE --detach-kernel-driver --silent --mimic-xpad --config /home/robin/.config/xboxdrv.conf &
-		  #xboxdrv --evdev $DEVICE -d --type xbox360-wireless --silent --evdev-keymap \ 
-		  #KEY_#300=y,KEY_#302=a,KEY_#301=b,BTN_DEAD=x,BTN_TOP=start,BTN_TRIGGER=back,\
-		  #BTN_A=guide,BTN_BASE6=rb,BTN_BASE5=lb,BTN_TOP2=du,BTN_BASE2=dl,BTN_BASE=dd,\
-		  #BTN_PINKIE=dr,BTN_THUMB=tl,BTN_THUMB2=tr --evdev-absmap ABS_#13=rt,ABS_#12=lt,\
-		  #ABS_X=x1,ABS_Y=y1,ABS_Z=x2,ABS_RX=y2 --mimic-xpad-wireless --axismap -Y1=Y1,-Y2=Y2 --calibration RT=0:127:255,LT=0:127:255 &
-		  PID=$!
-		  echo "$PID" > $PID_FILE
+DEVICE=/dev/input/dualshock3
+PID_FILE="/tmp/xboxdrv_pid$(echo $DEVICE | sed 's/\//_/g')"
+CONFIG=/home/robin/.scripts/xboxdrv.conf
+BASE_DIR=$(dirname $0)
+LOGFILE=/tmp/xboxdrv_udev.log
+
+echo "RUN: at `date` by `whoami` action: $ACTION \$1 $1 DEVNAME $DEVNAME" >> ${LOGFILE}
+echo "PATH: " $0 >> $LOGFILE
+
+# Set permissions so Steam cant default to it and forces to use modified input
+function fixPerm () {
+	chmod 600 $DEVICE
 }
 
-DEVICE=$1
-PID_FILE="/tmp/xboxdrv_pid$(echo $DEVICE | sed 's/\//_/g')"
+# Run xboxdrv and read out PID to file for termination later
+function axisConf () {
+	xboxdrv  --evdev $DEVICE -d -c ${BASE_DIR}/xboxdrv.conf >> ${LOGFILE} &
+	PID=$!
+	echo “$PID” > $PID_FILE
+}
 
-if [[ "$ACTION" == "remove" ]]; then
-	PID=$(cat $PID_FILE);
-	kill -9 $PID #SIGKILL is needed because the xboxdrv process can get stuck
+# When controller is 'added' by udev
+if [[ “$ACTION” == “add” ]]; then
+	fixPerm
+	axisConf	
 fi
-if [[ "$ACTION" == "add" ]]; then
-	startSixaxis
+
+# When disconnected 
+if [[ “$ACTION” == “remove” ]]; then
+	PID=$(cat $PID_FILE)
+	kill -9 $PID 		#SIGKILL is needed because the xboxdrv process can get stuck
 fi
