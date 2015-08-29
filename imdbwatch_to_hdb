@@ -54,3 +54,6 @@ while read imdb_id; do
         echo -e "\n"
     fi
 done <$imdb_list
+
+rm -f $hdb_list
+rm -f $imdb_list
