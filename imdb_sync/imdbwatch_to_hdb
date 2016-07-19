@@ -1,59 +1,83 @@
 #!/bin/bash
 # Keep HDBits wishlist in sync with IMDB's watchlist
-# Login info is req and will be typed into a separte text file
+# Login info is req and will be typed into a separate text file
 #set -xe
 
 # IMDB watchlist URL
-imdb_url="http://www.imdb.com/user/ur5234692/watchlist"
-imdb_list="/tmp/imdb_list"
-hdb_list="/tmp/hdb_list"
-config="watchlist.conf"
+IMDB_URL="http://www.imdb.com/user/ur5234692/watchlist"
+CONFIG="$HOME/scripts/imdb_sync/watchlist.conf"
+declare IMDB_LIST
+declare -A HDB_LIST
 
 # Fetch login info
-username=$(sed -rn 's|username=(.*)$|\1|p' $config)
-passkey=$(sed -rn 's|passkey=(.*)$|\1|p' $config)
+USERNAME=$(sed -rn 's|username=(.*)$|\1|p' $CONFIG)
+PASSKEY=$(sed -rn 's|passkey=(.*)$|\1|p' $CONFIG)
 
 ## Get IMDB watchlist url and filter out /<imdbID> -link
-curl -s --location $imdb_url | sed -rn 's|^.*title/(.*)/\?ref.*$|\1|p' | uniq > $imdb_list
+set_list_imdb() {
+    temp_list=$(curl -s --location $IMDB_URL \
+        | sed -rn 's|^.*true},"titles":(.*);.*$|\1|p')
+
+    # Filter the list to; tt098768
+    imdb_id_list=$(echo $temp_list | tr ',' '\n' | sed -rn 's|^.*":\{"primary":\{"href":"/title/(.*)"$|\1|p')
+
+    # Add to array
+    for id in $imdb_id_list; do
+        IMDB_LIST+=("$id")
+    done;
+}
 
 ## Get HDBits wishlist data and sort out the wishlist ID and IMDB ID
-curl -s -H "Content-Type: Application/json" \
-    -d '{"username":"'$username'","passkey":"'$passkey'"}' \
-    "https://hdbits.org/api/wishlist" |
-    tr {} '\n' | sed -rn 's|"id":"([0-9]+)","imdb":"([0-9]+).*$|\1 \2|p' > $hdb_list
+set_list_hdbits() {
+    # Fetch and filter list
+    temp_list=$(curl -s -H "Content-Type: Application/json" \
+        -d '{"username":"'$USERNAME'","passkey":"'$PASSKEY'"}' \
+        "https://hdbits.org/api/wishlist" |
+        tr {} '\n' | sed -rn 's|"id":"([0-9]+)","imdb":"([0-9]+).*$|\1 \2|p')
 
-# Add wishlist ID and IMDB ID to ass-array
-declare -A HDB_LIST
-while read line; do
-    id=$(echo $line | awk '{print $1}')
-    imdb_id=$(echo $line | awk '{print $2}')
-    HDB_LIST[$id]="$imdb_id"
-done <${hdb_list}
+    # Add wishlist ID and IMDB ID to an array
+    # Because of wishlistDel API the "wishlist ID" has to be passed on and therefore an associative array
+    # had to be setup between "HDBits Wishlist Id" -> "IMDB ID"
+    while read line; do
+        hdb_id=$(echo $line | awk '{print $1}')
+        imdb_id=$(echo $line | awk '{print $2}')
+        HDB_LIST[$hdb_id]="$imdb_id"
+    done <<< "${temp_list}"
+}
 
-## DELETION
-# Check if movies has been removed from IMDB's watchlist and then remove from HDB-wishlist
-for id in "${!HDB_LIST[@]}"; do
-    if ! grep -q ${HDB_LIST[$id]} $imdb_list; then
-        echo "Deleting movie.."
-        curl -H "Content-Type: Application/json" \
-            -d '{"username":"'$username'","passkey":"'$passkey'","id":"'$id'"}' \
-            "https://hdbits.org/api/wishlistDel"
-        echo -e "\n"
-    fi
-done
 
-## ADDING
-# Check if new movies has appeared in IMDB's watchlist and then add to HDBit's wishlist
-while read imdb_id; do
-    new_id=$(echo $imdb_id | sed -rn 's|^tt0+?(.*)|\1|p')
-    if ! grep -q $new_id $hdb_list; then
-        echo "Adding new movie.."
-        curl -H "Content-Type: Application/json" \
-            -d '{"username":"'$username'","passkey":"'$passkey'","imdb_id":"'$imdb_id'"}' \
-            "https://hdbits.org/api/wishlistAdd"
-        echo -e "\n"
-    fi
-done <$imdb_list
+## Sync hdbits wishlist with imdbs watchlist
+# Remove entries in HDBits wishlist that no longer exists in imdbs watchlist
+sync_lists() {
+    # Check if movies has been removed from IMDB's watchlist and then update the HDB-wishlist
+    for hdb_id in "${!HDB_LIST[@]}"; do
+        if ! grep -q ${HDB_LIST[$hdb_id]} <<< ${IMDB_LIST[@]}; then
+            echo "Deleting movie.."
+            curl -H "Content-Type: Application/json" \
+                -d '{"username":"'$USERNAME'","passkey":"'$PASSKEY'","id":"'$hdb_id'"}' \
+                "https://hdbits.org/api/wishlistDel"
+            echo -e "\n"
+        fi
+    done
+}
 
-rm -f $hdb_list
-rm -f $imdb_list
+## Adds titles found in IMDB's watchlist to HDBits wishlist
+add_movie_to_hdbits() {
+    # Check if new movies has appeared in IMDB's watchlist and then add to HDBit's wishlist
+    for imdb_id in "${IMDB_LIST[@]}"; do
+        new_id=$(echo $imdb_id | sed -rn 's|^tt0+?(.*)|\1|p')
+        if ! grep -q $new_id <<< ${HDB_LIST[@]}; then
+            echo "Adding new movie.."
+            curl -H "Content-Type: Application/json" \
+                -d '{"username":"'$USERNAME'","passkey":"'$PASSKEY'","imdb_id":"'$imdb_id'"}' \
+                "https://hdbits.org/api/wishlistAdd"
+            echo -e "\n"
+        fi
+    done
+}
+
+# RUNTIME
+set_list_imdb
+set_list_hdbits
+sync_lists
+add_movie_to_hdbits

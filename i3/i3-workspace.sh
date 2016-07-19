@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -x
+#set -x
+
 WORKSPACES=$(
     i3-msg -t get_workspaces \
     | tr ',' '\n' \
@@ -7,12 +8,29 @@ WORKSPACES=$(
     | sed 's/"name":"\(.*\)"/\1/g' \
     | sort -n
 )
+# Fix ordered workspaces and remove gaps between numbers
+set_workspaces() {
+    # Get current workspaces
+    current_workspaces=$(
+        i3-msg -t get_workspaces \
+        | tr ',' '\n' \
+        | grep "name" \
+        | sed 's/"name":"\(.*\)"/\1/g' \
+        | sort -n
+    )
+    declare -a ordered_workspaces
+    # Get current workspaces with no nr
+    workspaces=$(sed -rn 's|^[0-9]:(.*)$|\1|p' <<< "${current_workspaces}")
+    i=1
+    for w in $workspaces; do
+        ordered_workspaces+=("${i}:$w")
+        let i=i+1
+    done
+    WORKSPACES=$(echo ${ordered_workspaces[*]})
+}
 
 # Pressed number to navigate/create workspace at
 WORKSPACE_NR=${1}
-
-# Navigate/Create or Move container to
-#ACTION=${2}
 
 create_workspace() {
     # Check if workspace already exists
@@ -41,30 +59,15 @@ move_container_to_workspace() {
     fi
 }
 
-
-set_key_color() {
-    KEY_COLOR="#268BD2"
-    echo "<span color='${KEY_COLOR}'>${1}</span>: ${2}&#09;"
-}
-
-#MENU+="$(set_key_color "Enter" "Enter")"
-#MENU+="$(set_key_color "Alt+r" "Rename")"
-#MENU+="$(set_key_color "Alt+m" "Move container")"
-
 prompt() {
-    echo "" | rofi -dmenu -p "Workspace:" -mesg "${MENU}" \
-        -kb-custom-1 "Alt+r" \
-        -kb-custom-2 "Alt+m" \
-        -kb-custom-3 "Alt+o"
+   sed -rn 's|^[0-9]:(.*)$|\1|p' <<< "${WORKSPACES}" | rofi -dmenu -p "Workspace:" -mesg "${MENU}"
 }
 
 # Make sure parameter exists before attempting to run
 ! [[ $1 ]] && exit
-
 if [ $2 = 'move' ]; then
     move_container_to_workspace
 else
     create_workspace
 fi
-
 exit
