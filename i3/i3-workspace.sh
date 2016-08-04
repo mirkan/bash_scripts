@@ -8,6 +8,7 @@ WORKSPACES=$(
     | sed 's/"name":"\(.*\)"/\1/g' \
     | sort -n
 )
+workspace_name=""
 # Fix ordered workspaces and remove gaps between numbers
 set_workspaces() {
     # Get current workspaces
@@ -58,9 +59,17 @@ move_container_to_workspace() {
         i3-msg move container to workspace "${WORKSPACE_NR}:${workspace_name}"
     fi
 }
+# Exec bin in case "workspace_name" matches witch executable file in $PATH
+exec_workspace_name() {
+    if which $workspace_name; then
+        nohup $workspace_name > /dev/null 2>&1&
+    fi
+}
 
 prompt() {
-   sed -rn 's|^[0-9]:(.*)$|\1|p' <<< "${WORKSPACES}" | rofi -dmenu -p "Workspace:" -mesg "${MENU}"
+   # List most used apps from rofis runcache
+   most_used=$(grep -m1 "rofi-[0-9].runcache" <<< "$(ls $HOME/.cache/rofi-*)")
+   cat $most_used | sed -rn 's|[0-9]+ (.*)|\1|p' | rofi -dmenu -p "Workspace:"
 }
 
 # Make sure parameter exists before attempting to run
@@ -69,5 +78,6 @@ if [ $2 = 'move' ]; then
     move_container_to_workspace
 else
     create_workspace
+    exec_workspace_name
 fi
 exit
