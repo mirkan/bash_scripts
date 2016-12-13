@@ -1,6 +1,5 @@
 #!/bin/sh
-#wallpapers=$HOME/pics/wallpapers/desktop
-wallpapers=$HOME/pics/wallpapers/desktop/1680x1050
+wallpapers=$HOME/pics/wallpapers/desktop/2560x1440
 
 while true; do
 	find $wallpapers -type f \( -name '*.jpg' -o -name '*.png' \) -print0 |

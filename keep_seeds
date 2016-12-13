@@ -1,9 +1,0 @@
-#!/bin/bash
-
-dir=/media/Passport/.torrents/seeding
-target=/media/Passport/.torrents/untagged
-
-inotifywait -m "$dir" --format '%f' -e close_write |
-    while read file; do
-        cp -R "$file" "$target"
-    done
