@@ -5,7 +5,7 @@
 
 path=/sys/class/backlight/acpi_video0
 max=100
-level=10
+level=20
 current=$(cat ${path}/brightness)
 case $1 in
     up)
